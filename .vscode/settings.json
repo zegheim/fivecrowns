@@ -1,0 +1,40 @@
+{
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    "autoDocstring.docstringFormat": "numpy-notypes",
+    "css.validate": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+    },
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.guides.bracketPairs": true,
+    "editor.insertSpaces": true,
+    "editor.renderControlCharacters": true,
+    "editor.renderWhitespace": "all",
+    "files.exclude": {
+        "**/.ipynb_checkpoints": true,
+        "**/__pycache__": true
+    },
+    "git.autofetch": "all",
+    "javascript.suggest.paths": false,
+    "python.analysis.autoFormatStrings": true,
+    "python.analysis.gotoDefinitionInStringLiteral": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.logLevel": "Trace",
+    "python.analysis.typeCheckingMode": "strict",
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.languageServer": "Pylance",
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        ".",
+        "-p",
+        "test_*.py"
+    ],
+    "python.testing.unittestEnabled": true,
+    "typescript.suggest.paths": false,
+    "workbench.editor.enablePreview": false
+}

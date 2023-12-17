@@ -1,0 +1,14 @@
+{
+    "recommendations": [
+        "bradlc.vscode-tailwindcss",
+        "charliermarsh.ruff",
+        "christian-kohler.path-intellisense",
+        "firefox-devtools.vscode-firefox-debug",
+        "KevinRose.vsc-python-indent",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "njpwerner.autodocstring",
+        "tamasfe.even-better-toml",
+        "usernamehw.errorlens",
+    ]
+}

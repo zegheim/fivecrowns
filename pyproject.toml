@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "fivecrowns"
+version = "0.1.0"
+description = "A Python WebSocket-powered implementation of Five Crowns, a five-suited rummy style card game with a rotating wild card."
+authors = ["Justin Arista Kasin <30282499+zegheim@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.12"
+fastapi = "^0.105.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.8"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
