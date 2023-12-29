@@ -6,7 +6,7 @@ import secrets
 from typing import Any
 
 import websockets as ws
-from sixnimmt import Board, Card, Game, Player
+from sixnimmt import Card, Game, Player
 
 SESSIONS: dict[str, Game] = {}
 
@@ -103,21 +103,19 @@ async def handle(player: Player, game: Game):
             case {"type": "select", "row": row}:
                 select(game, player, row)
             case _:
-                raise NotImplementedError
+                await error(player, f"Invalid payload: {message}")
 
 
-async def host(websocket: ws.WebSocketServerProtocol, min_players: int, max_players: int):
-    player = Player(websocket)
-
+async def host(player: Player, min_players: int, max_players: int):
+    session_id = secrets.token_urlsafe(6)
     try:
-        game = Game(Board(), min_players=min_players, max_players=max_players)
+        game = Game(session_id, min_players=min_players, max_players=max_players)
     except AssertionError:
         await error(player, "Invalid game configuration.")
         return
 
     game.add(player)
 
-    session_id = secrets.token_urlsafe(6)
     SESSIONS[session_id] = game
 
     try:
@@ -127,9 +125,7 @@ async def host(websocket: ws.WebSocketServerProtocol, min_players: int, max_play
         del SESSIONS[session_id]
 
 
-async def join(websocket: ws.WebSocketServerProtocol, session_id: str):
-    player = Player(websocket)
-
+async def join(player: Player, session_id: str):
     try:
         game = SESSIONS[session_id]
     except KeyError:
@@ -151,16 +147,22 @@ async def join(websocket: ws.WebSocketServerProtocol, session_id: str):
 
 
 async def handler(websocket: ws.WebSocketServerProtocol):
-    message = await websocket.recv()
-    event = json.loads(message)
+    player = Player(websocket)
+
+    message = await player.connection.recv()
+    try:
+        event = json.loads(message)
+    except json.JSONDecodeError:
+        await error(player, f"Not a valid JSON: {message}")
+        return
 
     match event:
         case {"type": "host", "minPlayers": min_players, "maxPlayers": max_players}:
-            await host(websocket, min_players, max_players)
+            await host(player, min_players, max_players)
         case {"type": "join", "sessionId": session_id}:
-            await join(websocket, session_id)
+            await join(player, session_id)
         case _:
-            raise NotImplementedError
+            await error(player, f"Invalid payload: {message}")
 
 
 async def main():

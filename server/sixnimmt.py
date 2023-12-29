@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from functools import cached_property, total_ordering
 
 import websockets
@@ -51,19 +52,11 @@ class Card:
         return 1
 
 
+@dataclass
 class Player:
-    def __init__(self, connection: websockets.WebSocketServerProtocol):
-        self.connection = connection
-        self.hand: set[Card] = set()
-        self.stack: set[Card] = set()
-
-    def __hash__(self):
-        return hash(self.connection)
-
-    def __eq__(self, other: object):
-        if not isinstance(other, Player):
-            return False
-        return self.connection == other.connection
+    connection: websockets.WebSocketServerProtocol
+    hand: set[Card] = field(default_factory=set, init=False, compare=False)
+    stack: set[Card] = field(default_factory=set, init=False, compare=False)
 
     @property
     def score(self) -> int:
@@ -78,11 +71,15 @@ class Player:
         return True
 
 
+@dataclass
 class Board:
-    def __init__(self, rows: int = ROWS, cols: int = COLS):
-        self.rows = rows
-        self.cols = cols
-        self.board: list[list[Card]] = [[] for _ in range(self.rows)]
+    board_id: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
+    rows: int = field(default=ROWS, compare=False, kw_only=True)
+    cols: int = field(default=COLS, compare=False, kw_only=True)
+    board: list[list[Card]] = field(init=False, compare=False)
+
+    def __post_init__(self):
+        self.board = [[] for _ in range(self.rows)]
 
     @property
     def smallest_card(self) -> Card:
@@ -116,21 +113,22 @@ class Board:
             return (Position(row, col), set())
 
 
+@dataclass
 class Game:
-    def __init__(self, board: Board, min_players: int = MIN_PLAYERS, max_players: int = MAX_PLAYERS):
-        # Game-related attributes
-        self.players: set[Player] = set()
-        self.min_players = min_players
-        self.max_players = max_players
-        self.board = board
-        self.started = False
+    # Session-related attributes
+    session_id: str
+    players: set[Player] = field(default_factory=set, init=False)
+    board: Board = field(default_factory=Board, compare=False)
+    min_players: int = field(default=MIN_PLAYERS, compare=False, kw_only=True)
+    max_players: int = field(default=MAX_PLAYERS, compare=False, kw_only=True)
+    started: bool = field(default=False, init=False, compare=False)
 
-        # Turn-related attributes
-        self.lowest_card_player: Player | None = None
-        self.selected_row: int | None = None
-        self.cards_to_play: dict[Player, Card] = {}
-        self.played_cards: dict[Player, tuple[Card, Position]] = {}
-        self.progressed = False
+    # Turn-related attributes
+    lowest_card_player: Player | None = field(default=None, init=False, compare=False)
+    selected_row: int | None = field(default=None, init=False, compare=False)
+    cards_to_play: dict[Player, Card] = field(default_factory=dict, init=False, compare=False)
+    played_cards: dict[Player, tuple[Card, Position]] = field(default_factory=dict, init=False, compare=False)
+    progressed: bool = field(default=False, init=False, compare=False)
 
     def __post_init__(self):
         assert MIN_PLAYERS <= self.min_players <= self.max_players
