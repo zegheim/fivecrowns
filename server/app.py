@@ -15,9 +15,16 @@ def broadcast(game: Game, payload: dict[str, Any]):
     ws.broadcast((player.connection for player in game.players), json.dumps(payload))
 
 
-def play(game: Game, player: Player, card: Card):
+def leave(game: Game, player: Player):
+    game.players.remove(player)
+    broadcast(game, {"type": "leave", "player": str(player.connection.id)})
+    if len(game.players) == 0:
+        del SESSIONS[game.session_id]
+
+
+async def play(game: Game, player: Player, card: Card):
     if not game.play(player, card):
-        return
+        await error(player, f"Cannot play card {card.value}")
 
     broadcast(game, {"type": "play", "player": str(player.connection.id)})
 
@@ -28,16 +35,17 @@ def play(game: Game, player: Player, card: Card):
         broadcast(game, {"type": "play", "player": str(player.connection.id), "card": card.value})
 
     if game.lowest_card_player is not None:
-        broadcast(game, {"type": "select", "player": str(player.connection.id)})
+        broadcast(game, {"type": "select", "player": str(game.lowest_card_player.connection.id)})
     else:
         progress(game, player)
 
 
-def select(game: Game, player: Player, row: int):
+async def select(game: Game, player: Player, row: int):
     if not game.select(player, row):
-        return
+        await error(player, f"Cannot select row {row}")
 
     broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
+
     progress(game, player)
 
 
@@ -74,11 +82,10 @@ async def error(player: Player, message: str):
     await send(player, {"type": "error", "message": message})
 
 
-async def start(game: Game):
-    if game.started:
+async def start(game: Game, player: Player):
+    if not game.start():
+        await error(player, f"Cannot start game {game.session_id}.")
         return
-
-    game.start()
 
     for idx, row in enumerate(game.board.board):
         broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
@@ -87,7 +94,7 @@ async def start(game: Game):
         await send(player, {"type": "deal", "cards": [card.value for card in player.hand]})
 
 
-async def handle(player: Player, game: Game):
+async def handle(game: Game, player: Player):
     async for message in player.connection:
         try:
             event = json.loads(message)
@@ -97,19 +104,22 @@ async def handle(player: Player, game: Game):
 
         match event:
             case {"type": "start"}:
-                await start(game)
+                await start(game, player)
             case {"type": "play", "card": card}:
-                play(game, player, Card(card))
+                await play(game, player, Card(card))
             case {"type": "select", "row": row}:
-                select(game, player, row)
+                await select(game, player, row)
             case _:
                 await error(player, f"Invalid payload: {message}")
 
+        if game.should_end:
+            break
 
-async def host(player: Player, min_players: int, max_players: int):
+
+async def host(player: Player):
     session_id = secrets.token_urlsafe(6)
     try:
-        game = Game(session_id, min_players=min_players, max_players=max_players)
+        game = Game(session_id)
     except AssertionError:
         await error(player, "Invalid game configuration.")
         return
@@ -119,10 +129,12 @@ async def host(player: Player, min_players: int, max_players: int):
     SESSIONS[session_id] = game
 
     try:
-        await send(player, {"type": "host", "sessionId": session_id, "player": str(player.connection.id)})
-        await handle(player, game)
+        await send(
+            player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]}
+        )
+        await handle(game, player)
     finally:
-        del SESSIONS[session_id]
+        leave(game, player)
 
 
 async def join(player: Player, session_id: str):
@@ -132,18 +144,20 @@ async def join(player: Player, session_id: str):
         await error(player, "Game not found.")
         return
 
-    if game.started:
-        await error(player, f"Game {session_id} has already started.")
+    if not game.add(player):
+        await error(player, f"Cannot join game {session_id}.")
         return
 
-    if not game.add(player):
-        await error(player, f"Game {session_id} is already full.")
-        return
+    await send(
+        player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]}
+    )
+
+    broadcast(game, {"type": "join", "player": str(player.connection.id)})
 
     try:
-        await handle(player, game)
+        await handle(game, player)
     finally:
-        game.players.remove(player)
+        leave(game, player)
 
 
 async def handler(websocket: ws.WebSocketServerProtocol):
@@ -157,8 +171,8 @@ async def handler(websocket: ws.WebSocketServerProtocol):
         return
 
     match event:
-        case {"type": "host", "minPlayers": min_players, "maxPlayers": max_players}:
-            await host(player, min_players, max_players)
+        case {"type": "host"}:
+            await host(player)
         case {"type": "join", "sessionId": session_id}:
             await join(player, session_id)
         case _:

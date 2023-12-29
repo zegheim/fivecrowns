@@ -12,6 +12,7 @@ websockets = "12.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.8"
+ipykernel = "^6.28.0"
 
 [tool.ruff]
 line-length = 120

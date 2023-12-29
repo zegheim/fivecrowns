@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-import uuid
+import sys
 from dataclasses import dataclass, field
 from functools import cached_property, total_ordering
 
@@ -54,9 +54,12 @@ class Card:
 
 @dataclass
 class Player:
-    connection: websockets.WebSocketServerProtocol
+    connection: websockets.WebSocketServerProtocol = field(repr=False)
     hand: set[Card] = field(default_factory=set, init=False, compare=False)
     stack: set[Card] = field(default_factory=set, init=False, compare=False)
+
+    def __hash__(self):
+        return hash(self.connection.id)
 
     @property
     def score(self) -> int:
@@ -73,10 +76,9 @@ class Player:
 
 @dataclass
 class Board:
-    board_id: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
-    rows: int = field(default=ROWS, compare=False, kw_only=True)
-    cols: int = field(default=COLS, compare=False, kw_only=True)
-    board: list[list[Card]] = field(init=False, compare=False)
+    rows: int = field(default=ROWS, kw_only=True)
+    cols: int = field(default=COLS, kw_only=True)
+    board: list[list[Card]] = field(init=False)
 
     def __post_init__(self):
         self.board = [[] for _ in range(self.rows)]
@@ -85,15 +87,15 @@ class Board:
     def smallest_card(self) -> Card:
         return min(row[-1] for row in self.board)
 
-    def is_valid(self, row: int):
+    def is_valid(self, row: int) -> bool:
         return 0 <= row <= self.rows - 1
 
     def where(self, card: Card) -> int:
-        min_idx = self.rows
-        min_diff = DECK[-1]
+        min_idx = sys.maxsize
+        min_diff = sys.maxsize
 
         for idx, row in enumerate(self.board):
-            if card < row[-1]:
+            if card <= row[-1]:
                 continue
             if (diff := card.value - row[-1].value) < min_diff:
                 min_idx = idx
@@ -102,15 +104,20 @@ class Board:
         return min_idx
 
     def place(self, card: Card, row: int | None = None) -> tuple[Position, set[Card]]:
-        row = row or self.where(card)
+        if row is not None:
+            stack = self.board[row]
+            self.board[row] = [card]
+            return Position(row, 0), set(stack)
+
+        row = self.where(card)
 
         if (col := len(self.board[row])) >= self.cols:
             stack = self.board[row]
             self.board[row] = [card]
-            return (Position(row, 0), set(stack))
-        else:
-            self.board[row].append(card)
-            return (Position(row, col), set())
+            return Position(row, 0), set(stack)
+
+        self.board[row].append(card)
+        return Position(row, col), set()
 
 
 @dataclass
@@ -118,21 +125,20 @@ class Game:
     # Session-related attributes
     session_id: str
     players: set[Player] = field(default_factory=set, init=False)
-    board: Board = field(default_factory=Board, compare=False)
-    min_players: int = field(default=MIN_PLAYERS, compare=False, kw_only=True)
-    max_players: int = field(default=MAX_PLAYERS, compare=False, kw_only=True)
-    started: bool = field(default=False, init=False, compare=False)
+    board: Board = field(default_factory=Board, kw_only=True)
+    min_players: int = field(default=MIN_PLAYERS, kw_only=True)
+    max_players: int = field(default=MAX_PLAYERS, kw_only=True)
+    started: bool = field(default=False, init=False)
 
     # Turn-related attributes
-    lowest_card_player: Player | None = field(default=None, init=False, compare=False)
-    selected_row: int | None = field(default=None, init=False, compare=False)
-    cards_to_play: dict[Player, Card] = field(default_factory=dict, init=False, compare=False)
-    played_cards: dict[Player, tuple[Card, Position]] = field(default_factory=dict, init=False, compare=False)
-    progressed: bool = field(default=False, init=False, compare=False)
+    lowest_card_player: Player | None = field(default=None, init=False)
+    selected_row: int | None = field(default=None, init=False)
+    cards_to_play: dict[Player, Card] = field(default_factory=dict, init=False)
+    played_cards: dict[Player, tuple[Card, Position]] = field(default_factory=dict, init=False)
+    progressed: bool = field(default=False, init=False)
 
     def __post_init__(self):
-        assert MIN_PLAYERS <= self.min_players <= self.max_players
-        assert self.min_players <= self.max_players <= MAX_PLAYERS
+        assert MIN_PLAYERS <= self.min_players <= self.max_players <= MAX_PLAYERS
 
     @property
     def should_start(self):
@@ -143,26 +149,15 @@ class Game:
         return (
             self.started
             and not self.progressed
-            and set(self.cards_to_play.values()) == set(self.players)  # everyone has chosen to play a card
+            and self.players == set(self.cards_to_play)  # everyone has chosen to play a card
             and len(set(len(player.hand) for player in self.players)) == 1  # everyone has same number of cards left
         )
 
     @property
     def should_end(self):
-        return all(len(player.hand) == 0 for player in self.players)
+        return self.started and all(len(player.hand) == 0 for player in self.players)
 
-    def add(self, player: Player) -> bool:
-        if len(self.players) >= self.max_players:
-            return False
-
-        self.players.add(player)
-
-        return True
-
-    def deal(self) -> bool:
-        if self.started:
-            return False
-
+    def _deal(self) -> bool:
         if any(len(player.hand) > 0 for player in self.players):
             return False
 
@@ -175,13 +170,27 @@ class Game:
             for player in self.players:
                 player.hand.add(deck.pop())
 
-        for row in self.board.board:
-            row.append(deck.pop())
+        for row in range(self.board.rows):
+            self.board.place(deck.pop(), row=row)
+
+        return True
+
+    def add(self, player: Player) -> bool:
+        if self.started:
+            return False
+
+        if len(self.players) >= self.max_players:
+            return False
+
+        self.players.add(player)
 
         return True
 
     def play(self, player: Player, card: Card) -> bool:
         if not self.started:
+            return False
+
+        if self.progressed:
             return False
 
         if player in self.cards_to_play:
@@ -238,7 +247,7 @@ class Game:
 
     def start(self) -> bool:
         if self.should_start:
-            self.started = self.deal()
+            self.started = self._deal()
 
         return self.started
 
