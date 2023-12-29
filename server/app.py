@@ -19,16 +19,16 @@ def play(game: Game, player: Player, card: Card):
     if not game.play(player, card):
         return
 
-    broadcast(game, {"type": "play", "player": player.connection.id})
+    broadcast(game, {"type": "play", "player": str(player.connection.id)})
 
     if not game.should_progress:
         return
 
     for player, card in game.cards_to_play.items():
-        broadcast(game, {"type": "play", "player": player.connection.id, "card": card.value})
+        broadcast(game, {"type": "play", "player": str(player.connection.id), "card": card.value})
 
     if game.lowest_card_player is not None:
-        broadcast(game, {"type": "select", "player": player.connection.id})
+        broadcast(game, {"type": "select", "player": str(player.connection.id)})
     else:
         progress(game, player)
 
@@ -37,7 +37,7 @@ def select(game: Game, player: Player, row: int):
     if not game.select(player, row):
         return
 
-    broadcast(game, {"type": "select", "player": player.connection.id, "row": row})
+    broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
     progress(game, player)
 
 
@@ -50,7 +50,7 @@ def progress(game: Game, player: Player):
             game,
             {
                 "type": "play",
-                "player": player.connection.id,
+                "player": str(player.connection.id),
                 "row": position.row,
                 "column": position.col,
                 "card": card.value,
@@ -60,7 +60,7 @@ def progress(game: Game, player: Player):
     if game.should_end:
         broadcast(
             game,
-            {"type": "end", "scores": {player.connection.id: player.score for player in game.players}},
+            {"type": "end", "scores": {str(player.connection.id): player.score for player in game.players}},
         )
     else:
         game.reset()
@@ -81,7 +81,7 @@ async def start(game: Game):
     game.start()
 
     for idx, row in enumerate(game.board.board):
-        broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0]})
+        broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
 
     for player in game.players:
         await send(player, {"type": "deal", "cards": [card.value for card in player.hand]})
@@ -89,7 +89,11 @@ async def start(game: Game):
 
 async def handle(player: Player, game: Game):
     async for message in player.connection:
-        event = json.loads(message)
+        try:
+            event = json.loads(message)
+        except json.JSONDecodeError as err:
+            await error(player, err.msg)
+            continue
 
         match event:
             case {"type": "start"}:
@@ -102,14 +106,22 @@ async def handle(player: Player, game: Game):
                 raise NotImplementedError
 
 
-async def host(websocket: ws.WebSocketServerProtocol):
+async def host(websocket: ws.WebSocketServerProtocol, min_players: int, max_players: int):
     player = Player(websocket)
-    game = Game(set([player]), Board())
+
+    try:
+        game = Game(Board(), min_players=min_players, max_players=max_players)
+    except AssertionError:
+        await error(player, "Invalid game configuration.")
+        return
+
+    game.add(player)
+
     session_id = secrets.token_urlsafe(6)
     SESSIONS[session_id] = game
 
     try:
-        await send(player, {"type": "host", "sessionId": session_id})
+        await send(player, {"type": "host", "sessionId": session_id, "player": str(player.connection.id)})
         await handle(player, game)
     finally:
         del SESSIONS[session_id]
@@ -125,10 +137,12 @@ async def join(websocket: ws.WebSocketServerProtocol, session_id: str):
         return
 
     if game.started:
-        await error(player, "Game has already started.")
+        await error(player, f"Game {session_id} has already started.")
         return
 
-    game.players.add(player)
+    if not game.add(player):
+        await error(player, f"Game {session_id} is already full.")
+        return
 
     try:
         await handle(player, game)
@@ -141,8 +155,8 @@ async def handler(websocket: ws.WebSocketServerProtocol):
     event = json.loads(message)
 
     match event:
-        case {"type": "host"}:
-            await host(websocket)
+        case {"type": "host", "minPlayers": min_players, "maxPlayers": max_players}:
+            await host(websocket, min_players, max_players)
         case {"type": "join", "sessionId": session_id}:
             await join(websocket, session_id)
         case _:

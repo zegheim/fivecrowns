@@ -10,6 +10,8 @@ DECK = range(1, 105)
 TURNS = 10  # No. of cards dealt to each player
 ROWS = 4
 COLS = 5  # Maximum no. of cards in a given row
+MIN_PLAYERS = 2
+MAX_PLAYERS = 10
 
 
 @dataclass
@@ -115,9 +117,11 @@ class Board:
 
 
 class Game:
-    def __init__(self, players: set[Player], board: Board):
+    def __init__(self, board: Board, min_players: int = MIN_PLAYERS, max_players: int = MAX_PLAYERS):
         # Game-related attributes
-        self.players = players
+        self.players: set[Player] = set()
+        self.min_players = min_players
+        self.max_players = max_players
         self.board = board
         self.started = False
 
@@ -127,6 +131,14 @@ class Game:
         self.cards_to_play: dict[Player, Card] = {}
         self.played_cards: dict[Player, tuple[Card, Position]] = {}
         self.progressed = False
+
+    def __post_init__(self):
+        assert MIN_PLAYERS <= self.min_players <= self.max_players
+        assert self.min_players <= self.max_players <= MAX_PLAYERS
+
+    @property
+    def should_start(self):
+        return (self.min_players <= len(self.players) <= self.max_players) and not self.started
 
     @property
     def should_progress(self):
@@ -140,6 +152,14 @@ class Game:
     @property
     def should_end(self):
         return all(len(player.hand) == 0 for player in self.players)
+
+    def add(self, player: Player) -> bool:
+        if len(self.players) >= self.max_players:
+            return False
+
+        self.players.add(player)
+
+        return True
 
     def deal(self) -> bool:
         if self.started:
@@ -219,7 +239,7 @@ class Game:
         return True
 
     def start(self) -> bool:
-        if not self.started:
+        if self.should_start:
             self.started = self.deal()
 
         return self.started
