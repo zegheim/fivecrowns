@@ -37,7 +37,7 @@ async def play(game: Game, player: Player, card: Card):
     if game.lowest_card_player is not None:
         broadcast(game, {"type": "select", "player": str(game.lowest_card_player.connection.id)})
     else:
-        progress(game, player)
+        await progress(game, player)
 
 
 async def select(game: Game, player: Player, row: int):
@@ -46,10 +46,10 @@ async def select(game: Game, player: Player, row: int):
 
     broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
 
-    progress(game, player)
+    await progress(game, player)
 
 
-def progress(game: Game, player: Player):
+async def progress(game: Game, player: Player):
     if not game.progress():
         return
 
@@ -70,6 +70,8 @@ def progress(game: Game, player: Player):
             game,
             {"type": "end", "scores": {str(player.connection.id): player.score for player in game.players}},
         )
+        for p in game.players:
+            await p.connection.close(reason=f"Game {game.session_id} has ended.")
     else:
         game.reset()
 
@@ -163,7 +165,11 @@ async def join(player: Player, session_id: str):
 async def handler(websocket: ws.WebSocketServerProtocol):
     player = Player(websocket)
 
-    message = await player.connection.recv()
+    try:
+        message = await player.connection.recv()
+    except ws.ConnectionClosedOK:
+        return
+
     try:
         event = json.loads(message)
     except json.JSONDecodeError:
@@ -180,7 +186,7 @@ async def handler(websocket: ws.WebSocketServerProtocol):
 
 
 async def main():
-    async with ws.serve(handler, "", 8001):
+    async with ws.serve(handler, host="", port=8001):
         await asyncio.Future()  # run forever
 
 
