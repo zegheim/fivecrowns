@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import secrets
 from typing import Any
@@ -179,12 +178,3 @@ async def handler(websocket: ws.WebSocketServerProtocol):
             await join(player, session_id)
         case _:
             await error(player, f"Invalid payload: {message}")
-
-
-async def main():
-    async with ws.serve(handler, host="", port=8001):
-        await asyncio.Future()  # run forever
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
