@@ -14,14 +14,19 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def broadcast(game: Game, payload: dict[str, Any]):
-    logger.info("BROADCAST: %s", payload)
+def _broadcast(game: Game, payload: dict[str, Any], stacklevel: int = 1):
     ws.broadcast((player.connection for player in game.players), json.dumps(payload))
+    logger.info("BROADCAST: %s", payload, stacklevel=stacklevel + 1)
+
+
+async def _send(player: Player, payload: dict[str, Any], stacklevel: int = 1):
+    await player.connection.send(json.dumps(payload))
+    logger.info("SEND (%s): %s", player.connection.id, payload, stacklevel=stacklevel + 1)
 
 
 def leave(game: Game, player: Player):
     game.players.remove(player)
-    broadcast(game, {"type": "leave", "player": str(player.connection.id)})
+    _broadcast(game, {"type": "leave", "player": str(player.connection.id)})
     if len(game.players) == 0:
         session_id = game.session_id
         del SESSIONS[session_id]
@@ -31,17 +36,18 @@ def leave(game: Game, player: Player):
 async def play(game: Game, player: Player, card: Card):
     if not game.play(player, card):
         await error(player, f"Cannot play card {card.value}")
+        return
 
-    broadcast(game, {"type": "play", "player": str(player.connection.id)})
+    _broadcast(game, {"type": "play", "player": str(player.connection.id)})
 
     if not game.should_progress:
         return
 
     for player, card in game.cards_to_play.items():
-        broadcast(game, {"type": "play", "player": str(player.connection.id), "card": card.value})
+        _broadcast(game, {"type": "play", "player": str(player.connection.id), "card": card.value})
 
     if game.lowest_card_player is not None:
-        broadcast(game, {"type": "select", "player": str(game.lowest_card_player.connection.id)})
+        _broadcast(game, {"type": "select", "player": str(game.lowest_card_player.connection.id)})
     else:
         await progress(game, player)
 
@@ -49,8 +55,9 @@ async def play(game: Game, player: Player, card: Card):
 async def select(game: Game, player: Player, row: int):
     if not game.select(player, row):
         await error(player, f"Cannot select row {row}")
+        return
 
-    broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
+    _broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
 
     await progress(game, player)
 
@@ -60,7 +67,7 @@ async def progress(game: Game, player: Player):
         return
 
     for player, (card, position) in game.cards_played.items():
-        broadcast(
+        _broadcast(
             game,
             {
                 "type": "play",
@@ -72,7 +79,7 @@ async def progress(game: Game, player: Player):
         )
 
     if game.should_end:
-        broadcast(
+        _broadcast(
             game,
             {"type": "end", "scores": {str(player.connection.id): player.score for player in game.players}},
         )
@@ -82,13 +89,8 @@ async def progress(game: Game, player: Player):
         game.reset()
 
 
-async def send(player: Player, payload: dict[str, Any]):
-    await player.connection.send(json.dumps(payload))
-    logger.info("SEND (%s): %s", player.connection.id, payload)
-
-
 async def error(player: Player, message: str):
-    await send(player, {"type": "error", "message": message})
+    await _send(player, {"type": "error", "message": message}, stacklevel=2)
 
 
 async def start(game: Game, player: Player):
@@ -97,10 +99,10 @@ async def start(game: Game, player: Player):
         return
 
     for idx, row in enumerate(game.board.board):
-        broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
+        _broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
 
     for player in game.players:
-        await send(player, {"type": "deal", "cards": [card.value for card in player.hand]})
+        await _send(player, {"type": "deal", "cards": [card.value for card in player.hand]})
 
 
 async def handle(game: Game, player: Player):
@@ -140,7 +142,7 @@ async def host(player: Player):
     SESSIONS[session_id] = game
 
     try:
-        await send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
+        await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
         await handle(game, player)
     finally:
         leave(game, player)
@@ -157,9 +159,9 @@ async def join(player: Player, session_id: str):
         await error(player, f"Cannot join game {session_id}.")
         return
 
-    await send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
+    await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
 
-    broadcast(game, {"type": "join", "player": str(player.connection.id)})
+    _broadcast(game, {"type": "join", "player": str(player.connection.id)})
 
     try:
         await handle(game, player)
