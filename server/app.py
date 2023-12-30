@@ -53,7 +53,7 @@ async def progress(game: Game, player: Player):
     if not game.progress():
         return
 
-    for player, (card, position) in game.played_cards.items():
+    for player, (card, position) in game.cards_played.items():
         broadcast(
             game,
             {
@@ -131,9 +131,7 @@ async def host(player: Player):
     SESSIONS[session_id] = game
 
     try:
-        await send(
-            player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]}
-        )
+        await send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
         await handle(game, player)
     finally:
         leave(game, player)
@@ -150,9 +148,7 @@ async def join(player: Player, session_id: str):
         await error(player, f"Cannot join game {session_id}.")
         return
 
-    await send(
-        player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]}
-    )
+    await send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
 
     broadcast(game, {"type": "join", "player": str(player.connection.id)})
 

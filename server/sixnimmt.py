@@ -8,11 +8,9 @@ from functools import cached_property, total_ordering
 import websockets
 
 DECK = range(1, 105)
-TURNS = 10  # No. of cards dealt to each player
-ROWS = 4
-COLS = 5  # Maximum no. of cards in a given row
-MIN_PLAYERS = 2
-MAX_PLAYERS = 10
+MIN_PLAYERS, MAX_PLAYERS = 2, 10
+CARDS_PER_PLAYER = 10
+ROWS, COLS = 4, 5
 
 
 @dataclass
@@ -126,6 +124,7 @@ class Game:
     session_id: str
     players: set[Player] = field(default_factory=set, init=False)
     board: Board = field(default_factory=Board, kw_only=True)
+    cards_per_player: int = field(default=CARDS_PER_PLAYER, kw_only=True)
     min_players: int = field(default=MIN_PLAYERS, kw_only=True)
     max_players: int = field(default=MAX_PLAYERS, kw_only=True)
     started: bool = field(default=False, init=False)
@@ -134,11 +133,12 @@ class Game:
     lowest_card_player: Player | None = field(default=None, init=False)
     selected_row: int | None = field(default=None, init=False)
     cards_to_play: dict[Player, Card] = field(default_factory=dict, init=False)
-    played_cards: dict[Player, tuple[Card, Position]] = field(default_factory=dict, init=False)
+    cards_played: dict[Player, tuple[Card, Position]] = field(default_factory=dict, init=False)
     progressed: bool = field(default=False, init=False)
 
     def __post_init__(self):
         assert MIN_PLAYERS <= self.min_players <= self.max_players <= MAX_PLAYERS
+        assert self.max_players * self.cards_per_player + self.board.rows <= DECK[-1], "Invalid configuration"
 
     @property
     def should_start(self):
@@ -166,7 +166,7 @@ class Game:
 
         deck = [Card(value) for value in random.sample(DECK, len(DECK))]
 
-        for _ in range(TURNS):
+        for _ in range(self.cards_per_player):
             for player in self.players:
                 player.hand.add(deck.pop())
 
@@ -239,7 +239,7 @@ class Game:
             row = self.selected_row if idx == 0 else None
             position, stack = self.board.place(card, row=row)
             player.stack |= stack
-            self.played_cards[player] = (card, position)
+            self.cards_played[player] = (card, position)
 
         self.progressed = True
 
@@ -258,7 +258,7 @@ class Game:
         self.lowest_card_player = None
         self.selected_row = None
         self.cards_to_play = {}
-        self.played_cards = {}
+        self.cards_played = {}
         self.progressed = False
 
         return True
