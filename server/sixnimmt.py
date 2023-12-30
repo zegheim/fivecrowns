@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass, field
 from functools import cached_property, total_ordering
 
-import websockets
+from websockets import WebSocketServerProtocol
 
 DECK = range(1, 105)
 MIN_PLAYERS, MAX_PLAYERS = 2, 10
@@ -55,7 +55,7 @@ class Card:
 
 @dataclass
 class Player:
-    connection: websockets.WebSocketServerProtocol = field(repr=False)
+    connection: WebSocketServerProtocol = field(repr=False)
     hand: set[Card] = field(default_factory=set, init=False, compare=False)
     stack: set[Card] = field(default_factory=set, init=False, compare=False)
 
