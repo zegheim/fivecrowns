@@ -181,7 +181,7 @@ async def handler(websocket: ws.WebSocketServerProtocol):
         await error(player, f"Not a valid JSON: {message}")
         return
 
-    logger.debug("RECEIVE (%s): %s", player.connection.id, event)
+    logger.info("RECEIVE (%s): %s", player.connection.id, event)
 
     match event:
         case {"type": "host"}:

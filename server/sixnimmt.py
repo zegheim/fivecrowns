@@ -185,7 +185,7 @@ class Game:
     @property
     def should_end(self):
         have_no_cards_left = all(len(player.hand) == 0 for player in self.players)
-        self.logger.debug("Game has started = %s | Everyone has no cards left = %s", have_no_cards_left)
+        self.logger.debug("Game has started = %s | Everyone has no cards left = %s", self.started, have_no_cards_left)
         return self.started and have_no_cards_left
 
     def _deal(self) -> bool:
@@ -223,7 +223,7 @@ class Game:
 
         self.players.add(player)
 
-        self.logger.info("Added %s to game", player.connection.id)
+        self.logger.info("Added %s", player.connection.id)
 
         return True
 
