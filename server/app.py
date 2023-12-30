@@ -1,7 +1,12 @@
 import asyncio
+import json
+import logging.config
 
 import websockets as ws
 from handler import handler
+
+with open("config/logging.json") as config:
+    logging.config.dictConfig(json.load(config))
 
 
 async def main():

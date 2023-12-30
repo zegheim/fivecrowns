@@ -14,6 +14,7 @@ CARDS_PER_PLAYER = 10
 ROWS, COLS = 4, 5
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 @dataclass

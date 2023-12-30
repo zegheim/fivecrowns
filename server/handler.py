@@ -11,6 +11,7 @@ from sixnimmt import Card, Game, Player
 SESSIONS: dict[str, Game] = {}
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def broadcast(game: Game, payload: dict[str, Any]):
