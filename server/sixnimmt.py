@@ -207,7 +207,7 @@ class Game:
 
         for row in range(self.board.rows):
             card = deck.pop()
-            position, _ = self.board.place(deck.pop(), row=row)
+            position, _ = self.board.place(card, row=row)
             self.logger.debug("Dealt %s to %s on the board", card, position)
 
         return True
@@ -270,7 +270,9 @@ class Game:
             return False
 
         if player != self.lowest_card_player:
-            self.logger.warning("%s cannot select %d as they are not the lowest card player (%s)", player.connection.id, row, self.lowest_card_player)
+            self.logger.warning(
+                "%s cannot select %d as they are not the lowest card player (%s)", player.connection.id, row, self.lowest_card_player.connection.id
+            )
             return False
 
         if self.selected_row is not None:
