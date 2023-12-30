@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 from typing import Any
 
@@ -9,8 +10,11 @@ from sixnimmt import Card, Game, Player
 
 SESSIONS: dict[str, Game] = {}
 
+logger = logging.getLogger(__name__)
+
 
 def broadcast(game: Game, payload: dict[str, Any]):
+    logger.info("BROADCAST: %s", payload)
     ws.broadcast((player.connection for player in game.players), json.dumps(payload))
 
 
@@ -18,7 +22,9 @@ def leave(game: Game, player: Player):
     game.players.remove(player)
     broadcast(game, {"type": "leave", "player": str(player.connection.id)})
     if len(game.players) == 0:
-        del SESSIONS[game.session_id]
+        session_id = game.session_id
+        del SESSIONS[session_id]
+        logger.info("Deleted %s as it is empty", session_id)
 
 
 async def play(game: Game, player: Player, card: Card):
@@ -77,6 +83,7 @@ async def progress(game: Game, player: Player):
 
 async def send(player: Player, payload: dict[str, Any]):
     await player.connection.send(json.dumps(payload))
+    logger.info("SEND (%s): %s", player.connection.id, payload)
 
 
 async def error(player: Player, message: str):
@@ -102,6 +109,8 @@ async def handle(game: Game, player: Player):
         except json.JSONDecodeError as err:
             await error(player, err.msg)
             continue
+
+        logger.info("RECEIVE (%s): %s", player.connection.id, event)
 
         match event:
             case {"type": "start"}:
@@ -170,6 +179,8 @@ async def handler(websocket: ws.WebSocketServerProtocol):
     except json.JSONDecodeError:
         await error(player, f"Not a valid JSON: {message}")
         return
+
+    logger.debug("RECEIVE (%s): %s", player.connection.id, event)
 
     match event:
         case {"type": "host"}:
