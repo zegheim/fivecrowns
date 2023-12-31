@@ -6,7 +6,8 @@ import secrets
 from typing import Any
 
 import websockets as ws
-from sixnimmt import Card, Game, Player
+
+from .sixnimmt import Card, Game, Player
 
 SESSIONS: dict[str, Game] = {}
 

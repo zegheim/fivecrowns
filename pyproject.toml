@@ -12,7 +12,10 @@ websockets = "12.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.8"
-ipykernel = "^6.28.0"
+poethepoet = "^0.24.4"
+
+[tool.poe.tasks.dev]
+script = "server.app:run"
 
 [tool.ruff]
 line-length = 150
