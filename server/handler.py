@@ -25,8 +25,8 @@ async def _send(player: Player, payload: dict[str, Any], stacklevel: int = 1):
     logger.info("SEND (%s): %s", player.connection.id, payload, stacklevel=stacklevel + 1)
 
 
-async def _error(player: Player, message: str):
-    await _send(player, {"type": "error", "message": message}, stacklevel=2)
+async def _error(player: Player, message: str, stacklevel: int = 1):
+    await _send(player, {"type": "error", "message": message}, stacklevel=stacklevel + 1)
 
 
 def leave(game: Game, player: Player):
