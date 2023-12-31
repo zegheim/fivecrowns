@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "fivecrowns"
+name = "sixnimmt"
 version = "0.1.0"
-description = "A Python WebSocket-powered implementation of Five Crowns, a five-suited rummy style card game with a rotating wild card."
+description = "Python-based websocket server for 6 nimmt!, a fast-playing game of trying to avoid being the person to collect cards from a growing tableau of horrible risks."
 authors = ["Justin Arista Kasin <30282499+zegheim@users.noreply.github.com>"]
 license = "MIT"
 readme = "README.md"
