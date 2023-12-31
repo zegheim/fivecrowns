@@ -271,7 +271,10 @@ class Game:
 
         if player != self.lowest_card_player:
             self.logger.warning(
-                "%s cannot select %d as they are not the lowest card player (%s)", player.connection.id, row, self.lowest_card_player.connection.id
+                "%s cannot select %d as they are not the lowest card player (%s)",
+                player.connection.id,
+                row,
+                self.lowest_card_player.connection.id if self.lowest_card_player is not None else self.lowest_card_player,
             )
             return False
 
