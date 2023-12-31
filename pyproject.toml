@@ -9,10 +9,12 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "3.12"
 websockets = "12.0"
+structlog = "23.3.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.8"
 poethepoet = "^0.24.4"
+rich = "^13.7.0"
 
 [tool.poe.tasks.dev]
 script = "server.app:run"

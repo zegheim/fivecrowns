@@ -1,112 +1,111 @@
 from __future__ import annotations
 
 import json
-import logging
 import secrets
 from typing import Any
 
+import structlog
 import websockets as ws
 
-from .sixnimmt import Card, Game, Player
+from .sixnimmt import Card, Player, Session
 
-SESSIONS: dict[str, Game] = {}
+SESSIONS: dict[str, Session] = {}
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
-
-
-def _broadcast(game: Game, payload: dict[str, Any], stacklevel: int = 1):
-    ws.broadcast((player.connection for player in game.players), json.dumps(payload))
-    logger.info("BROADCAST: %s", payload, stacklevel=stacklevel + 1)
+logger = structlog.stdlib.get_logger()
 
 
-async def _send(player: Player, payload: dict[str, Any], stacklevel: int = 1):
+def _broadcast(session: Session, payload: dict[str, Any]):
+    ws.broadcast((player.connection for player in session.players), json.dumps(payload))
+    logger.info("server.broadcast", session=session.session_id, **payload)
+
+
+async def _send(player: Player, payload: dict[str, Any]):
     await player.connection.send(json.dumps(payload))
-    logger.info("SEND (%s): %s", player.connection.id, payload, stacklevel=stacklevel + 1)
+    logger.info("server.send", player_id=player.player_id, **payload)
 
 
-async def _error(player: Player, message: str, stacklevel: int = 1):
-    await _send(player, {"type": "error", "message": message}, stacklevel=stacklevel + 1)
+async def _error(player: Player, message: str):
+    await _send(player, {"type": "error", "message": message})
 
 
-def leave(game: Game, player: Player):
-    game.players.remove(player)
-    _broadcast(game, {"type": "leave", "player": str(player.connection.id)})
-    if len(game.players) == 0:
-        session_id = game.session_id
-        del SESSIONS[session_id]
-        logger.info("Deleted %s as it is empty", session_id)
+def leave(session: Session, player: Player):
+    if not session.remove(player):
+        return
+
+    _broadcast(session, {"type": "leave", "player": str(player.player_id)})
+
+    if len(session.players) == 0:
+        del SESSIONS[session.session_id]
+        logger.info("session.delete", session_id=session.session_id, player_id=player.player_id)
 
 
-async def play(game: Game, player: Player, card: Card):
-    if not game.play(player, card):
+async def play(session: Session, player: Player, card: Card):
+    if not session.play(player, card):
         await _error(player, f"Cannot play card {card.value}")
         return
 
-    _broadcast(game, {"type": "play", "player": str(player.connection.id)})
+    _broadcast(session, {"type": "play", "player": str(player.player_id)})
 
-    if not game.should_progress:
+    if not session.should_progress:
         return
 
-    for player, card in game.cards_to_play.items():
-        _broadcast(game, {"type": "play", "player": str(player.connection.id), "card": card.value})
+    for player, card in session.cards_to_play.items():
+        _broadcast(session, {"type": "play", "player": str(player.player_id), "card": card.value})
 
-    if game.lowest_card_player is not None:
-        _broadcast(game, {"type": "select", "player": str(game.lowest_card_player.connection.id)})
+    if session.smallest_card_player is not None:
+        _broadcast(session, {"type": "select", "player": str(session.smallest_card_player.player_id)})
     else:
-        await progress(game, player)
+        await progress(session, player)
 
 
-async def select(game: Game, player: Player, row: int):
-    if not game.select(player, row):
+async def select(session: Session, player: Player, row: int):
+    if not session.select(player, row):
         await _error(player, f"Cannot select row {row}")
         return
 
-    _broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
+    _broadcast(session, {"type": "select", "player": str(player.player_id), "row": row})
 
-    await progress(game, player)
+    await progress(session, player)
 
 
-async def progress(game: Game, player: Player):
-    if not game.progress():
+async def progress(session: Session, player: Player):
+    if not session.progress():
         return
 
-    for player, (card, position) in game.cards_played.items():
+    for player, (card, position) in session.cards_played.items():
         _broadcast(
-            game,
+            session,
             {
                 "type": "play",
-                "player": str(player.connection.id),
+                "player": str(player.player_id),
                 "row": position.row,
                 "column": position.col,
                 "card": card.value,
             },
         )
 
-    if game.should_end:
+    if session.should_end:
         _broadcast(
-            game,
-            {"type": "end", "scores": {str(player.connection.id): player.score for player in game.players}},
+            session,
+            {"type": "end", "scores": {str(player.player_id): player.score for player in session.players}},
         )
-        for p in game.players:
-            await p.connection.close(reason=f"Game {game.session_id} has ended.")
     else:
-        game.reset()
+        session.reset()
 
 
-async def start(game: Game, player: Player):
-    if not game.start():
-        await _error(player, f"Cannot start game {game.session_id}.")
+async def start(session: Session, player: Player):
+    if not session.start():
+        await _error(player, f"Cannot start game {session.session_id}.")
         return
 
-    for idx, row in enumerate(game.board.board):
-        _broadcast(game, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
+    for idx, row in enumerate(session.board.board):
+        _broadcast(session, {"type": "init", "row": idx, "column": 0, "card": row[0].value})
 
-    for player in game.players:
+    for player in session.players:
         await _send(player, {"type": "deal", "cards": [card.value for card in player.hand]})
 
 
-async def handle(game: Game, player: Player):
+async def handle(session: Session, player: Player):
     async for message in player.connection:
         try:
             event = json.loads(message)
@@ -114,26 +113,26 @@ async def handle(game: Game, player: Player):
             await _error(player, err.msg)
             continue
 
-        logger.info("RECEIVE (%s): %s", player.connection.id, event)
+        logger.info("server.receive", session_id=session.session_id, player_id=player.player_id, payload=event)
 
         match event:
             case {"type": "start"}:
-                await start(game, player)
+                await start(session, player)
             case {"type": "play", "card": card}:
-                await play(game, player, Card(card))
+                await play(session, player, Card(card))
             case {"type": "select", "row": row}:
-                await select(game, player, row)
+                await select(session, player, row)
             case _:
                 await _error(player, f"Invalid payload: {message}")
 
-        if game.should_end:
+        if session.should_end:
             break
 
 
 async def host(player: Player):
     session_id = secrets.token_urlsafe(6)
     try:
-        game = Game(session_id)
+        game = Session(session_id)
     except AssertionError:
         await _error(player, "Invalid game configuration.")
         return
@@ -143,7 +142,7 @@ async def host(player: Player):
     SESSIONS[session_id] = game
 
     try:
-        await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
+        await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.player_id) for p in game.players]})
         await handle(game, player)
     finally:
         leave(game, player)
@@ -160,9 +159,9 @@ async def join(player: Player, session_id: str):
         await _error(player, f"Cannot join game {session_id}.")
         return
 
-    await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
+    await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.player_id) for p in game.players]})
 
-    _broadcast(game, {"type": "join", "player": str(player.connection.id)})
+    _broadcast(game, {"type": "join", "player": str(player.player_id)})
 
     try:
         await handle(game, player)
@@ -184,7 +183,7 @@ async def handler(websocket: ws.WebSocketServerProtocol):
         await _error(player, f"Not a valid JSON: {message}")
         return
 
-    logger.info("RECEIVE (%s): %s", player.connection.id, event)
+    logger.info("server.receive", player_id=player.player_id, payload=event)
 
     match event:
         case {"type": "host"}:

@@ -1,15 +1,15 @@
 import asyncio
-import logging.config
 
+import structlog
 import websockets as ws
 
 from .handler import handler
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger()
 
 
 async def main():
-    logger.info("Starting websockets server localhost:8001")
+    logger.info("server.init")
     async with ws.serve(handler, host="", port=8001):
         await asyncio.Future()  # run forever
 
