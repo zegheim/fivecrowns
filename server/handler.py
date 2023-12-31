@@ -28,9 +28,12 @@ async def _error(player: Player, message: str):
     await _send(player, {"type": "error", "message": message})
 
 
-def leave(session: Session, player: Player):
+async def leave(session: Session, player: Player):
     if not session.remove(player):
+        await _error(player, "Could not leave session")
         return
+
+    await player.connection.close(reason="You have left the session")
 
     _broadcast(session, {"type": "leave", "player": str(player.player_id)})
 
@@ -122,6 +125,8 @@ async def handle(session: Session, player: Player):
                 await play(session, player, Card(card))
             case {"type": "select", "row": row}:
                 await select(session, player, row)
+            case {"type": "leave"}:
+                await leave(session, player)
             case _:
                 await _error(player, f"Invalid payload: {message}")
 
@@ -145,7 +150,7 @@ async def host(player: Player):
         await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.player_id) for p in game.players]})
         await handle(game, player)
     finally:
-        leave(game, player)
+        await leave(game, player)
 
 
 async def join(player: Player, session_id: str):
@@ -166,7 +171,7 @@ async def join(player: Player, session_id: str):
     try:
         await handle(game, player)
     finally:
-        leave(game, player)
+        await leave(game, player)
 
 
 async def handler(websocket: ws.WebSocketServerProtocol):
