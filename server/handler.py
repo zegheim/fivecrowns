@@ -25,6 +25,10 @@ async def _send(player: Player, payload: dict[str, Any], stacklevel: int = 1):
     logger.info("SEND (%s): %s", player.connection.id, payload, stacklevel=stacklevel + 1)
 
 
+async def _error(player: Player, message: str):
+    await _send(player, {"type": "error", "message": message}, stacklevel=2)
+
+
 def leave(game: Game, player: Player):
     game.players.remove(player)
     _broadcast(game, {"type": "leave", "player": str(player.connection.id)})
@@ -36,7 +40,7 @@ def leave(game: Game, player: Player):
 
 async def play(game: Game, player: Player, card: Card):
     if not game.play(player, card):
-        await error(player, f"Cannot play card {card.value}")
+        await _error(player, f"Cannot play card {card.value}")
         return
 
     _broadcast(game, {"type": "play", "player": str(player.connection.id)})
@@ -55,7 +59,7 @@ async def play(game: Game, player: Player, card: Card):
 
 async def select(game: Game, player: Player, row: int):
     if not game.select(player, row):
-        await error(player, f"Cannot select row {row}")
+        await _error(player, f"Cannot select row {row}")
         return
 
     _broadcast(game, {"type": "select", "player": str(player.connection.id), "row": row})
@@ -90,13 +94,9 @@ async def progress(game: Game, player: Player):
         game.reset()
 
 
-async def error(player: Player, message: str):
-    await _send(player, {"type": "error", "message": message}, stacklevel=2)
-
-
 async def start(game: Game, player: Player):
     if not game.start():
-        await error(player, f"Cannot start game {game.session_id}.")
+        await _error(player, f"Cannot start game {game.session_id}.")
         return
 
     for idx, row in enumerate(game.board.board):
@@ -111,7 +111,7 @@ async def handle(game: Game, player: Player):
         try:
             event = json.loads(message)
         except json.JSONDecodeError as err:
-            await error(player, err.msg)
+            await _error(player, err.msg)
             continue
 
         logger.info("RECEIVE (%s): %s", player.connection.id, event)
@@ -124,7 +124,7 @@ async def handle(game: Game, player: Player):
             case {"type": "select", "row": row}:
                 await select(game, player, row)
             case _:
-                await error(player, f"Invalid payload: {message}")
+                await _error(player, f"Invalid payload: {message}")
 
         if game.should_end:
             break
@@ -135,7 +135,7 @@ async def host(player: Player):
     try:
         game = Game(session_id)
     except AssertionError:
-        await error(player, "Invalid game configuration.")
+        await _error(player, "Invalid game configuration.")
         return
 
     game.add(player)
@@ -153,11 +153,11 @@ async def join(player: Player, session_id: str):
     try:
         game = SESSIONS[session_id]
     except KeyError:
-        await error(player, "Game not found.")
+        await _error(player, "Game not found.")
         return
 
     if not game.add(player):
-        await error(player, f"Cannot join game {session_id}.")
+        await _error(player, f"Cannot join game {session_id}.")
         return
 
     await _send(player, {"type": "info", "sessionId": session_id, "players": [str(p.connection.id) for p in game.players]})
@@ -181,7 +181,7 @@ async def handler(websocket: ws.WebSocketServerProtocol):
     try:
         event = json.loads(message)
     except json.JSONDecodeError:
-        await error(player, f"Not a valid JSON: {message}")
+        await _error(player, f"Not a valid JSON: {message}")
         return
 
     logger.info("RECEIVE (%s): %s", player.connection.id, event)
@@ -192,4 +192,4 @@ async def handler(websocket: ws.WebSocketServerProtocol):
         case {"type": "join", "sessionId": session_id}:
             await join(player, session_id)
         case _:
-            await error(player, f"Invalid payload: {message}")
+            await _error(player, f"Invalid payload: {message}")
