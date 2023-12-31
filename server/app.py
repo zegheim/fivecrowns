@@ -1,14 +1,9 @@
 import asyncio
-import json
 import logging.config
-from pathlib import Path
 
 import websockets as ws
 
 from .handler import handler
-
-with open(Path(__file__).parent / "config/logging.json") as config:
-    logging.config.dictConfig(json.load(config))
 
 logger = logging.getLogger(__name__)
 
